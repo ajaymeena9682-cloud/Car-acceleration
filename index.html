@@ -1,0 +1,304 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Car Acceleration / Deceleration Simulator (Physics)</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#22c55e;--muted:#9aa9b4;color-scheme:dark}
+    *{box-sizing:border-box;font-family:Inter,Segoe UI,Arial,Helvetica,sans-serif}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071022 0%, #081427 100%);color:#e6eef6}
+    .wrap{max-width:1000px;margin:28px auto;padding:20px}
+    h1{margin:0 0 12px;font-size:20px}
+    .grid{display:grid;grid-template-columns:360px 1fr;gap:18px}
+    .card{background:rgba(255,255,255,0.03);padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    label{display:block;font-size:13px;margin-bottom:6px;color:var(--muted)}
+    input[type=range]{width:100%}
+    .row{display:flex;gap:10px;align-items:center;margin-bottom:10px}
+    .row > *{flex:1}
+    .small{font-size:13px;color:var(--muted)}
+    .controls{display:flex;gap:8px;margin-top:10px}
+    button{background:var(--accent);border:none;padding:10px 12px;border-radius:8px;color:#01220a;font-weight:600;cursor:pointer}
+    button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+    .display{display:flex;gap:12px;flex-wrap:wrap}
+    .stat{background:rgba(255,255,255,0.02);padding:10px;border-radius:8px;min-width:120px}
+    .big{font-size:20px;font-weight:700}
+    canvas#speedo{width:100%;height:240px}
+    .chart{height:160px;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);border-radius:8px;padding:8px;}
+    footer{margin-top:12px;font-size:12px;color:var(--muted)}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}canvas#speedo{height:200px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Car acceleration / deceleration simulator — physics (km/h & m/s²)</h1>
+    <div class="grid">
+      <div class="card">
+        <div class="small">Vehicle & environment parameters (use realistic values for Indian conditions)</div>
+        <div style="margin-top:10px">
+          <label>Mass (kg) <span id="massLabel" class="small">1200</span></label>
+          <input id="mass" type="range" min="600" max="2000" value="1200">
+        </div>
+        <div style="margin-top:8px">
+          <label>Frontal area (m²) <span id="areaLabel" class="small">2.2</span></label>
+          <input id="area" type="range" min="1.2" max="3.0" step="0.05" value="2.2">
+        </div>
+        <div style="margin-top:8px">
+          <label>Drag coefficient C<sub>d</sub> <span id="cdLabel" class="small">0.34</span></label>
+          <input id="cd" type="range" min="0.2" max="0.6" step="0.01" value="0.34">
+        </div>
+        <div style="margin-top:8px">
+          <label>Rolling resistance coeff (C<sub>rr</sub>) <span id="crrLabel" class="small">0.015</span></label>
+          <input id="crr" type="range" min="0.005" max="0.05" step="0.001" value="0.015">
+        </div>
+        <div style="margin-top:8px">
+          <label>Max engine torque equivalent force (N) at wheels <span id="fmaxLabel" class="small">4500</span></label>
+          <input id="fmax" type="range" min="500" max="7000" step="10" value="4500">
+        </div>
+        <div style="margin-top:8px">
+          <label>Air density ρ (kg/m³) <span id="rhoLabel" class="small">1.225</span></label>
+          <input id="rho" type="range" min="1.0" max="1.4" step="0.005" value="1.225">
+        </div><div style="margin-top:12px">
+      <label>Throttle (%) <span id="thLabel" class="small">0</span></label>
+      <input id="throttle" type="range" min="0" max="100" value="0">
+    </div>
+
+    <div style="margin-top:8px">
+      <label>Brake (%) <span id="brLabel" class="small">0</span></label>
+      <input id="brake" type="range" min="0" max="100" value="0">
+    </div>
+
+    <div style="margin-top:12px" class="controls">
+      <button id="start">Start</button>
+      <button id="pause" class="ghost">Pause</button>
+      <button id="reset" class="ghost">Reset</button>
+    </div>
+
+    <div style="margin-top:12px">
+      <div class="small">Extra options</div>
+      <div style="margin-top:8px" class="row">
+        <label><input id="includeDrag" type="checkbox" checked> Include aerodynamic drag</label>
+        <label><input id="includeRoll" type="checkbox" checked> Include rolling resistance</label>
+      </div>
+    </div>
+
+    <div style="margin-top:12px" class="small">Units: speed shown km/h and m/s. Typical Indian city speed limits: 50–60 km/h, highways 80–100 km/h.</div>
+  </div>
+
+  <div class="card">
+    <canvas id="speedo"></canvas>
+    <div style="display:flex;gap:14px;margin-top:10px;align-items:center;justify-content:space-between">
+      <div class="display">
+        <div class="stat">
+          <div class="small">Speed</div>
+          <div id="speedKmph" class="big">0.0 km/h</div>
+          <div id="speedMs" class="small">0.00 m/s</div>
+        </div>
+        <div class="stat">
+          <div class="small">Acceleration</div>
+          <div id="accelVal" class="big">0.00 m/s²</div>
+          <div class="small" id="forceNet">Net force: 0 N</div>
+        </div>
+        <div class="stat">
+          <div class="small">Distance</div>
+          <div id="distVal" class="big">0.00 m</div>
+          <div class="small">Time: <span id="timeVal">0.0 s</span></div>
+        </div>
+      </div>
+      <div style="flex:1">
+        <div class="chart" id="chartWrap">
+          <canvas id="chartCanvas" width="700" height="140"></canvas>
+        </div>
+      </div>
+    </div>
+    <footer>Tip: increase throttle to see acceleration; apply brake to decelerate. You can simulate uphill by increasing rolling resistance or lowering fmax.</footer>
+  </div>
+</div>
+
+  </div>  <script>
+    // --- Utility & DOM ---
+    const $ = id => document.getElementById(id);
+    const mass = $('mass'), area = $('area'), cd = $('cd'), crr = $('crr'), fmax = $('fmax'), rho = $('rho');
+    const throttle = $('throttle'), brake = $('brake');
+    const startBtn = $('start'), pauseBtn = $('pause'), resetBtn = $('reset');
+    const includeDrag = $('includeDrag'), includeRoll = $('includeRoll');
+    const speedKmph = $('speedKmph'), speedMs = $('speedMs'), accelVal = $('accelVal'), forceNet = $('forceNet'), distVal = $('distVal'), timeVal = $('timeVal');
+    const speedo = document.getElementById('speedo');
+    const ctx = speedo.getContext('2d');
+    const chartCanvas = $('chartCanvas'); const cctx = chartCanvas.getContext('2d');
+
+    // display labels
+    const setLabel = (el, id) => { $(id+'Label').innerText = el.value; };
+    [mass,area,cd,crr,fmax,rho,throttle,brake].forEach(v=>{v.addEventListener('input',()=>{
+      // update labels for sliders present
+      if(v===mass) $('massLabel').innerText = v.value;
+      if(v===area) $('areaLabel').innerText = parseFloat(v.value).toFixed(2);
+      if(v===cd) $('cdLabel').innerText = parseFloat(v.value).toFixed(2);
+      if(v===crr) $('crrLabel').innerText = parseFloat(v.value).toFixed(3);
+      if(v===fmax) $('fmaxLabel').innerText = parseFloat(v.value);
+      if(v===rho) $('rhoLabel').innerText = parseFloat(v.value);
+      if(v===throttle) $('thLabel').innerText = v.value;
+      if(v===brake) $('brLabel').innerText = v.value;
+    })});
+
+    // --- Simulation parameters ---
+    const g = 9.81;
+    let running = false, lastT = null;
+    let v = 0; // m/s
+    let time = 0; // s
+    let dist = 0; // m
+    const data = {t:[], v:[]};
+
+    // initial canvas resizing
+    function resizeCanvas(){
+      speedo.width = speedo.clientWidth * devicePixelRatio;
+      speedo.height = 240 * devicePixelRatio;
+      chartCanvas.width = chartCanvas.clientWidth * devicePixelRatio;
+      chartCanvas.height = 140 * devicePixelRatio;
+      drawSpeedo(); drawChart();
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // physics: compute net force (N)
+    function computeForces(v) {
+      const m = parseFloat(mass.value);
+      const A = parseFloat(area.value);
+      const Cd = parseFloat(cd.value);
+      const rhoVal = parseFloat(rho.value);
+      const Crr = parseFloat(crr.value);
+      const throttleFrac = parseFloat(throttle.value)/100;
+      const brakeFrac = parseFloat(brake.value)/100;
+      const Fengine = throttleFrac * parseFloat(fmax.value); // simplified: throttle -> wheel force
+      // aerodynamic drag F = 1/2 * rho * Cd * A * v^2
+      const Fdrag = includeDrag.checked ? 0.5 * rhoVal * Cd * A * v * v : 0;
+      // rolling resistance approx F = Crr * m * g
+      const Froll = includeRoll.checked ? Crr * m * g : 0;
+      const Fbrake = brakeFrac * 8000; // brake force model (N) - adjustable
+      const Fnet = Fengine - Fdrag - Froll - Fbrake;
+      return {Fengine,Fdrag,Froll,Fbrake,Fnet,m};
+    }
+
+    // integration loop
+    function step(dt) {
+      // dt in seconds
+      const forces = computeForces(v);
+      const a = forces.Fnet / forces.m; // m/s^2
+      // simple Euler integration
+      const vNew = Math.max(0, v + a * dt); // car doesn't go backward in this simple sim
+      const distInc = v * dt + 0.5 * a * dt * dt;
+      v = vNew; time += dt; dist += distInc;
+      // record data
+      data.t.push(time); data.v.push(v);
+      if(data.t.length>1200){ data.t.shift(); data.v.shift(); }
+      // update UI
+      const kmph = (v*3.6).toFixed(2);
+      speedKmph.innerText = `${kmph} km/h`;
+      speedMs.innerText = `${v.toFixed(2)} m/s`;
+      accelVal.innerText = `${a.toFixed(2)} m/s²`;
+      forceNet.innerText = `Net force: ${forces.Fnet.toFixed(1)} N`;
+      distVal.innerText = `${dist.toFixed(2)} m`;
+      timeVal.innerText = `${time.toFixed(2)} s`;
+      drawSpeedo(); drawChart();
+    }
+
+    // animation loop
+    function loop(ts){
+      if(!running) return; // stopped
+      if(!lastT) lastT = ts;
+      const dt_ms = ts - lastT; lastT = ts;
+      // run physics in fixed small steps to remain stable
+      let remaining = dt_ms/1000;
+      const stepSize = 0.02; // 20 ms
+      while(remaining > 1e-6){
+        const d = Math.min(stepSize, remaining);
+        step(d);
+        remaining -= d;
+      }
+      requestAnimationFrame(loop);
+    }
+
+    startBtn.addEventListener('click', ()=>{
+      if(!running){ running=true; lastT=null; requestAnimationFrame(loop); startBtn.innerText='Running'; startBtn.disabled=true; pauseBtn.disabled=false; }
+    });
+    pauseBtn.addEventListener('click', ()=>{
+      running=false; startBtn.innerText='Start'; startBtn.disabled=false; pauseBtn.disabled=true;
+    });
+    resetBtn.addEventListener('click', ()=>{
+      running=false; startBtn.innerText='Start'; startBtn.disabled=false; pauseBtn.disabled=true; lastT=null;
+      v=0; time=0; dist=0; data.t=[]; data.v=[]; updateUIZero(); drawChart(); drawSpeedo();
+    });
+    // initial state
+    pauseBtn.disabled = true;
+
+    function updateUIZero(){ speedKmph.innerText='0.00 km/h'; speedMs.innerText='0.00 m/s'; accelVal.innerText='0.00 m/s²'; forceNet.innerText='Net force: 0 N'; distVal.innerText='0.00 m'; timeVal.innerText='0.00 s'; }
+
+    // simple speedometer drawing
+    function drawSpeedo(){
+      const W = speedo.width, H = speedo.height; ctx.clearRect(0,0,W,H);
+      ctx.save(); ctx.scale(devicePixelRatio,devicePixelRatio);
+      const w = speedo.clientWidth, h = speedo.clientHeight;
+      // background
+      ctx.fillStyle = 'rgba(255,255,255,0.02)'; ctx.roundRect(0,0,w,h,10); ctx.fill();
+      // dial
+      const cx = w/2, cy = h*0.6, r = Math.min(w*0.38, h*0.5);
+      ctx.beginPath(); ctx.arc(cx,cy,r,Math.PI,0); ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=2; ctx.stroke();
+      // ticks
+      const maxKmph = 200;
+      for(let i=0;i<=10;i++){
+        const ang = Math.PI - (i/10)*Math.PI;
+        const x1 = cx + Math.cos(ang)*(r-8); const y1 = cy + Math.sin(ang)*(r-8);
+        const x2 = cx + Math.cos(ang)*(r-24); const y2 = cy + Math.sin(ang)*(r-24);
+        ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=2; ctx.stroke();
+        const labelSpeed = Math.round((i/10)*maxKmph);
+        const lx = cx + Math.cos(ang)*(r-36); const ly = cy + Math.sin(ang)*(r-36);
+        ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='12px sans-serif'; ctx.textAlign='center'; ctx.fillText(labelSpeed, lx, ly+4);
+      }
+      // needle
+      const needleKmph = Math.min(200, v*3.6);
+      const angNeedle = Math.PI - (needleKmph/200)*Math.PI;
+      const nx = cx + Math.cos(angNeedle)*(r-40); const ny = cy + Math.sin(angNeedle)*(r-40);
+      ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(nx,ny); ctx.strokeStyle='rgba(255,80,80,0.95)'; ctx.lineWidth=3; ctx.stroke();
+      // center
+      ctx.beginPath(); ctx.arc(cx,cy,6,0,Math.PI*2); ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.fill();
+      // numeric
+      ctx.fillStyle='rgba(255,255,255,0.95)'; ctx.font='20px sans-serif'; ctx.textAlign='center'; ctx.fillText((v*3.6).toFixed(1)+" km/h", cx, cy-12);
+      ctx.restore();
+    }
+
+    // Chart: speed vs time simple
+    function drawChart(){
+      // clear
+      cctx.clearRect(0,0,chartCanvas.width,chartCanvas.height);
+      cctx.save(); cctx.scale(devicePixelRatio,devicePixelRatio);
+      const W = chartCanvas.clientWidth, H = chartCanvas.clientHeight;
+      // background grid
+      cctx.fillStyle='rgba(255,255,255,0.02)'; cctx.fillRect(0,0,W,H);
+      // axes
+      cctx.strokeStyle='rgba(255,255,255,0.06)'; cctx.lineWidth=1; cctx.beginPath(); cctx.moveTo(36,8); cctx.lineTo(36,H-18); cctx.lineTo(W-8,H-18); cctx.stroke();
+      // if no data
+      if(data.t.length<2){ cctx.fillStyle='rgba(255,255,255,0.6)'; cctx.font='12px sans-serif'; cctx.fillText('Speed (km/h) vs Time (s)', 48, 18); cctx.restore(); return; }
+      // compute ranges
+      const t0 = data.t[0]; const t1 = data.t[data.t.length-1]; const dt = Math.max(1,t1-t0);
+      const vmax = Math.max(40, Math.max(...data.v)*3.6);
+      // draw line
+      cctx.beginPath(); for(let i=0;i<data.t.length;i++){ const tx = 36 + ((data.t[i]-t0)/dt)*(W-52); const vy = data.v[i]*3.6; const ty = (H-18) - (vy/vmax)*(H-36); if(i===0) cctx.moveTo(tx,ty); else cctx.lineTo(tx,ty); }
+      cctx.strokeStyle='rgba(34,197,94,0.95)'; cctx.lineWidth=2; cctx.stroke();
+      // labels
+      cctx.fillStyle='rgba(255,255,255,0.8)'; cctx.font='11px sans-serif'; cctx.fillText((v*3.6).toFixed(1)+" km/h", W-80, 24);
+      cctx.fillStyle='rgba(255,255,255,0.45)'; cctx.fillText(t1.toFixed(1)+" s", W-60, H-4);
+      cctx.restore();
+    }
+
+    // polyfill roundRect for older browsers
+    CanvasRenderingContext2D.prototype.roundRect = CanvasRenderingContext2D.prototype.roundRect || function(x,y,w,h,r){
+      if(w<2*r) r=w/2; if(h<2*r) r=h/2; this.beginPath(); this.moveTo(x+r,y); this.arcTo(x+w,y,x+w,y+h,r); this.arcTo(x+w,y+h,x,y+h,r); this.arcTo(x,y+h,x,y,r); this.arcTo(x,y,x+w,y,r); this.closePath(); };
+
+    // initial draw
+    updateUIZero(); drawSpeedo(); drawChart();
+
+    // accessibility: allow keyboard start
+    window.addEventListener('keydown', (e)=>{ if(e.code==='Space'){ if(running) pauseBtn.click(); else startBtn.click(); } });
+  </script></body>
+</html>    
